@@ -1,11 +1,11 @@
 import React, { Component } from "react";
+import deepstream from "deepstream.io-client-js";
+
 import { parse } from "query-string";
-import { ChatManager, TokenProvider } from "@pusher/chatkit";
 
 import axios from "../../services/axios";
 import UserForm from "../UserForm";
-import RoomSelect from "../RoomSelect";
-// import Welcome from "../Welcome";
+import Typing from "../Typing";
 
 import "react-chat-widget/lib/styles.css";
 import "./style.css";
@@ -17,79 +17,84 @@ import {
   renderCustomComponent
 } from "react-chat-widget";
 
-const tokenProvider = new TokenProvider({
-  url: "http://localhost:5000/api/authentications/clients/chat",
-  headers: {
-    "accept-version": 1,
-    "Accept-Language": "pt"
-  }
-});
-
 class App extends Component {
   constructor(props) {
     super(props);
 
     this.state = {
-      currentUser: null,
-      pusherRoomId: null,
-      privateRoom: null,
-      rooms: []
+      chat: null,
+      token: null,
+      accountId: null
     };
   }
 
-  handleEnterRoom = async ({ pusherRoomId }) => {
-    const { currentUser } = this.state;
-
-    await currentUser.joinRoom({
-      roomId: pusherRoomId
-    });
-
-    const clientAgentRoom = await currentUser.createRoom({
-      name: currentUser.id, // importante
-      private: false
-    });
-
-    currentUser.subscribeToRoom({
-      roomId: clientAgentRoom.id,
-      hooks: {
-        onNewMessage: message => {
-          if (message.senderId !== currentUser.id) {
-            addResponseMessage(message.text);
-          }
-        }
-      },
-      messageLimit: 100
-    });
-
-    this.setState({ pusherRoomId, privateRoom: clientAgentRoom.id });
-  };
-
   handleCreateUserChat = async ({ email, name, phone }) => {
-    const { rooms } = this.state;
+    const { token, accountId, chat } = this.state;
 
     try {
-      const {
-        data: { id }
-      } = await axios.post("/api/clients", { email, name, phone });
+      const deepstreamClient = deepstream("localhost:6020").login(
+        {
+          type: "webhook",
+          email,
+          data: {
+            name,
+            phone,
+            accountId
+          }
+        },
+        (success, data) => console.log(success, data)
+      );
 
-      const chatManager = new ChatManager({
-        instanceLocator: "v1:us1:a55faaa0-561d-4a4e-afab-ac8e4383e38a",
-        userId: id,
-        tokenProvider: tokenProvider
+      const recordClient = deepstreamClient.record.getRecord("clients");
+
+      recordClient.whenReady(() => {
+        recordClient.set({
+          email,
+          name,
+          phone,
+          token,
+          accountId
+        });
+
+        recordClient.delete();
+        // console.log(recordClient);
       });
+      // const List = chat.toString();
 
-      const currentUser = await chatManager.connect();
+      // // create a list
+      // const WLRoom = deepstreamClient.record.getList(List);
 
-      this.setState({
-        currentUser
-      });
+      // // when ready
+      // WLRoom.whenReady(() => {
+      //   const clientId = `clients/${email}`;
 
-      renderCustomComponent(RoomSelect, {
-        handleEnterRoom: this.handleEnterRoom,
-        rooms
-      });
+      //   if (!WLRoom.getEntries().some(recordName => recordName === clientId)) {
+      //     const recordClient = deepstreamClient.record.getRecord(clientId);
+
+      //     recordClient.whenReady(() => {
+      //       WLRoom.addEntry(clientId);
+
+      //       recordClient.set({
+      //         email,
+      //         name,
+      //         phone,
+      //         token,
+      //         accountId
+      //       });
+
+      //       // rec.discard();
+      //     });
+      //   }
+      // });
+
+      // // events
+      // WLRoom.on("entry-added", recordName => {
+      //   console.log("Add new user in List: ", recordName);
+      // });
+
+      document.getElementsByClassName("rcw-sender")[0].style.display = "flex";
     } catch (error) {
-      console.log(error.response);
+      console.log(error);
     }
   };
 
@@ -102,37 +107,44 @@ class App extends Component {
 
     try {
       const {
-        data: { agents, rooms }
+        data: { chat, id: accountId }
       } = await axios("/api/accounts/token", {
         params: {
           token
         }
       });
 
-      this.setState({ rooms });
+      this.setState({
+        chat,
+        token,
+        accountId
+      });
 
       renderCustomComponent(UserForm, {
         handleCreateUserChat: this.handleCreateUserChat
       });
     } catch (error) {
-      console.log(error.response);
+      console.log("Ocorreu algum erro pela falta do token", error);
     }
   };
 
-  handleNewUserMessage = async messageFromClient => {
-    const { privateRoom, currentUser } = this.state;
+  handleNewUserMessage = async message => {
+    const { privateChat } = this.state;
 
-    const messageId = await currentUser.sendMessage({
-      text: messageFromClient,
-      roomId: privateRoom
+    privateChat.emit("message", {
+      text: message
     });
-
-    console.log("message id: ", messageId);
   };
+
+  handleOnChangeMessage = async e =>
+    this.state.currentUser.isTypingIn({
+      roomId: this.state.privateRoomId
+    });
 
   render() {
     return (
       <Widget
+        handleOnChangeMessage={this.handleOnChangeMessage}
         title="MEU TITULO"
         titleAvatar={foto}
         subtitle="MEU SUBTITULO"

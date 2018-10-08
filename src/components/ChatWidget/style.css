@@ -2,6 +2,16 @@
   display: none;
 }
 
+.agent-typing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.typingClientName {
+  margin-left: 20px;
+}
 /* .rcw-messages-container {
   overflow-x: hidden;
   overflow-y: auto;
